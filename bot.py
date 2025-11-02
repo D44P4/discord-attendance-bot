@@ -90,10 +90,75 @@ async def on_ready():
         traceback.print_exc()
 
 
+async def check_and_send_summary():
+    """22時に集計結果を送信するチェック"""
+    now = datetime.now(pytz.timezone("Asia/Tokyo"))
+    
+    # 22時になったかチェック
+    if now.hour == 22 and now.minute == 0:
+        date_str = now.strftime("%Y-%m-%d")
+        
+        # 今日メッセージを送信したかチェック
+        if date_str in sent_dates:
+            if config.get("channel_id"):
+                channel = bot.get_channel(int(config["channel_id"]))
+                if channel:
+                    summary = data_manager.get_summary(now)
+                    
+                    embed = discord.Embed(
+                        title=f"{summary['date']} の集計結果",
+                        color=discord.Color.green()
+                    )
+                    
+                    embed.add_field(
+                        name="総回答数",
+                        value=f"{summary['total_responses']}件",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="参加可能",
+                        value=f"{summary['attendable_count']}人",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="参加不可",
+                        value=f"{summary['not_attendable_count']}人",
+                        inline=True
+                    )
+                    
+                    if summary['attendable_users']:
+                        user_list = []
+                        for user_data in summary['attendable_users']:
+                            user_id = user_data['user_id']
+                            start_time = user_data.get('start_time', '未設定')
+                            end_time = user_data.get('end_time', '未設定')
+                            user_list.append(f"<@{user_id}>: {start_time} ～ {end_time}")
+                        
+                        embed.add_field(
+                            name="参加可能なユーザー",
+                            value="\n".join(user_list) if user_list else "なし",
+                            inline=False
+                        )
+                    else:
+                        embed.add_field(
+                            name="参加可能なユーザー",
+                            value="なし",
+                            inline=False
+                        )
+                    
+                    await channel.send(embed=embed)
+                    # 送信済みフラグを削除（1日1回のみ送信）
+                    sent_dates.discard(date_str)
+
+
 @tasks.loop(minutes=1)
 async def scheduler_task():
     """定期メッセージ送信タスク"""
     await scheduler.check_and_send()
+    # 集計結果送信チェック（22時に実行）
+    await check_and_send_summary()
 
 
 async def send_question_message(channel: discord.TextChannel, date: datetime = None):
@@ -128,12 +193,18 @@ async def send_question_message(channel: discord.TextChannel, date: datetime = N
 
 
 # スケジューラーのコールバックを設定
+# メッセージ送信日を記録（集計結果送信用）
+sent_dates = set()
+
 async def scheduled_send_callback(date: datetime):
     """スケジュール送信コールバック"""
     if config.get("channel_id"):
         channel = bot.get_channel(int(config["channel_id"]))
         if channel:
             await send_question_message(channel, date)
+            # 送信した日付を記録（集計結果送信用）
+            date_str = date.strftime("%Y-%m-%d")
+            sent_dates.add(date_str)
 
 
 scheduler.set_send_callback(scheduled_send_callback)
@@ -197,20 +268,20 @@ class TimeSelectionView(discord.ui.View):
         self.start_time = start_time
         self.end_time = end_time
         
-        # 開始時刻選択ドロップダウン
+        # 開始時刻選択ドロップダウン（30分単位）
         start_placeholder = f"開始時刻を選択{' (選択済み: ' + self.start_time + ')' if self.start_time else ''}"
         self.start_time_select = discord.ui.Select(
             placeholder=start_placeholder[:100],  # Discordのプレースホルダーは100文字制限
-            options=self._create_time_options()
+            options=self._create_time_options("start")
         )
         self.start_time_select.callback = self._start_time_callback
         self.add_item(self.start_time_select)
         
-        # 終了時刻選択ドロップダウン
+        # 終了時刻選択ドロップダウン（30分単位）
         end_placeholder = f"終了時刻を選択{' (選択済み: ' + self.end_time + ')' if self.end_time else ''}"
         self.end_time_select = discord.ui.Select(
             placeholder=end_placeholder[:100],
-            options=self._create_time_options()
+            options=self._create_time_options("end")
         )
         self.end_time_select.callback = self._end_time_callback
         self.add_item(self.end_time_select)
@@ -224,20 +295,29 @@ class TimeSelectionView(discord.ui.View):
         self.confirm_button.callback = self._confirm_callback
         self.add_item(self.confirm_button)
     
-    def _create_time_options(self):
-        """時刻選択オプションを作成（25個以内に制限）"""
+    def _create_time_options(self, select_type: str = "start"):
+        """時刻選択オプションを作成（30分単位、降順）"""
         options = []
-        # 1時間ごとの選択肢（23時～0時の24個、降順）
+        # 30分単位の選択肢（23:30～0:00まで降順、全48個）
+        # DiscordのSelectは25個までなので、開始時刻と終了時刻で範囲を分ける
+        all_options = []
         for hour in range(23, -1, -1):  # 23時から0時まで降順
-            time_str = f"{hour:02d}:00"
-            options.append(
-                discord.SelectOption(
-                    label=time_str,
-                    value=time_str,
-                    description=f"{time_str}に設定"
+            for minute in [30, 0]:  # 30分、0分の順（降順）
+                time_str = f"{hour:02d}:{minute:02d}"
+                all_options.append(
+                    discord.SelectOption(
+                        label=time_str,
+                        value=time_str,
+                        description=f"{time_str}に設定"
+                    )
                 )
-            )
-        return options
+        
+        # 開始時刻用: 23:30～12:00（25個）
+        # 終了時刻用: 11:30～0:00（23個、25個以内）
+        if select_type == "start":
+            return all_options[:25]  # 23:30～12:00
+        else:  # end
+            return all_options[25:]  # 11:30～0:00
     
     async def _start_time_callback(self, interaction: discord.Interaction):
         """開始時刻が選択されたときの処理"""
