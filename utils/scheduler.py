@@ -69,24 +69,34 @@ class Scheduler:
         
         return False
     
+    _last_sent_minute = None  # クラス変数として追加
+    
     async def check_and_send(self):
         """現在時刻をチェックして、送信時刻になったらメッセージを送信"""
         now = datetime.now(self.jst)
         current_time = now.time()
         
-        # 送信時刻かどうかをチェック
+        # 送信時刻かどうかをチェック（同じ分内で重複送信を防ぐ）
         if (current_time.hour == self.send_time.hour and
             current_time.minute == self.send_time.minute):
             
+            # 同じ分内で既に送信済みならスキップ
+            current_minute_key = f"{now.year}-{now.month}-{now.day}-{current_time.hour}-{current_time.minute}"
+            if hasattr(self, '_last_sent_minute') and self._last_sent_minute == current_minute_key:
+                return
+            
             should_send = self.should_send_today(now)
-            print(f"[スケジューラー] {now.strftime('%Y-%m-%d %H:%M:%S')} - 送信時刻チェック: hour={current_time.hour}, minute={current_time.minute}, should_send={should_send}")
+            print(f"[スケジューラー] {now.strftime('%Y-%m-%d %H:%M:%S')} - 送信時刻チェック: hour={current_time.hour}, minute={current_time.minute}, should_send={should_send}, weekday={now.weekday()}")
             
             if should_send:
                 if self.send_callback:
                     print(f"[スケジューラー] メッセージを送信します")
                     await self.send_callback(now)
+                    self._last_sent_minute = current_minute_key
                 else:
                     print(f"[スケジューラー] エラー: send_callbackが設定されていません")
+            else:
+                print(f"[スケジューラー] 今日は送信対象外です（曜日チェックと祝前日チェック）")
     
     def get_next_send_datetime(self) -> Optional[datetime]:
         """
