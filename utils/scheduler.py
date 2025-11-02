@@ -71,20 +71,22 @@ class Scheduler:
     
     async def check_and_send(self):
         """現在時刻をチェックして、送信時刻になったらメッセージを送信"""
-        while True:
-            now = datetime.now(self.jst)
-            current_time = now.time()
+        now = datetime.now(self.jst)
+        current_time = now.time()
+        
+        # 送信時刻かどうかをチェック
+        if (current_time.hour == self.send_time.hour and
+            current_time.minute == self.send_time.minute):
             
-            # 送信時刻かどうかをチェック
-            if (current_time.hour == self.send_time.hour and
-                current_time.minute == self.send_time.minute):
-                
-                if self.should_send_today(now):
-                    if self.send_callback:
-                        await self.send_callback(now)
+            should_send = self.should_send_today(now)
+            print(f"[スケジューラー] {now.strftime('%Y-%m-%d %H:%M:%S')} - 送信時刻チェック: hour={current_time.hour}, minute={current_time.minute}, should_send={should_send}")
             
-            # 次の分まで待機
-            await asyncio.sleep(60)
+            if should_send:
+                if self.send_callback:
+                    print(f"[スケジューラー] メッセージを送信します")
+                    await self.send_callback(now)
+                else:
+                    print(f"[スケジューラー] エラー: send_callbackが設定されていません")
     
     def get_next_send_datetime(self) -> Optional[datetime]:
         """

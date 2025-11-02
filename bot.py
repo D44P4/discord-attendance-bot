@@ -198,13 +198,20 @@ sent_dates = set()
 
 async def scheduled_send_callback(date: datetime):
     """スケジュール送信コールバック"""
+    print(f"[コールバック] メッセージ送信コールバックが呼ばれました: {date.strftime('%Y-%m-%d %H:%M:%S')}")
     if config.get("channel_id"):
         channel = bot.get_channel(int(config["channel_id"]))
         if channel:
+            print(f"[コールバック] チャンネルが見つかりました: {channel.name}")
             await send_question_message(channel, date)
             # 送信した日付を記録（集計結果送信用）
             date_str = date.strftime("%Y-%m-%d")
             sent_dates.add(date_str)
+            print(f"[コールバック] メッセージを送信しました。送信日付を記録: {date_str}")
+        else:
+            print(f"[コールバック] エラー: チャンネルが見つかりません。channel_id={config.get('channel_id')}")
+    else:
+        print(f"[コールバック] エラー: channel_idが設定されていません")
 
 
 scheduler.set_send_callback(scheduled_send_callback)
