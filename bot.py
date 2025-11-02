@@ -4,7 +4,8 @@ from discord.ext import commands, tasks
 import json
 import os
 import asyncio
-from datetime import datetime
+import argparse
+from datetime import datetime, time
 import pytz
 from utils.scheduler import Scheduler
 from utils.data_manager import DataManager
@@ -21,6 +22,7 @@ def load_config():
             "token": discord_token,
             "guild_id": os.environ.get("GUILD_ID", ""),
             "channel_id": os.environ.get("CHANNEL_ID", ""),
+            "auto_send_channel_id": os.environ.get("AUTO_SEND_CHANNEL_ID", ""),
             "send_time": os.environ.get("SEND_TIME", "20:00"),
             "weekdays": json.loads(os.environ.get("WEEKDAYS", "[4,5]")),
             "send_before_holidays": os.environ.get("SEND_BEFORE_HOLIDAYS", "true").lower() == "true"
@@ -63,6 +65,24 @@ async def on_ready():
     # 少し待ってからコマンドを同期（Discord APIの準備を待つ）
     await asyncio.sleep(1)
     
+    # テスト用: 即座にメッセージを送信
+    global force_send_flag
+    if force_send_flag:
+        await asyncio.sleep(2)  # ボットが完全に準備できるまで少し待つ
+        # 自動送信用のチャンネルIDを取得（設定されていない場合は通常のchannel_idを使用）
+        auto_send_channel_id = config.get("auto_send_channel_id") or config.get("channel_id")
+        if auto_send_channel_id:
+            channel = bot.get_channel(int(auto_send_channel_id))
+            if channel:
+                now = datetime.now(pytz.timezone("Asia/Tokyo"))
+                await send_question_message(channel, now)
+                print(f"[テスト] メッセージを即座に送信しました（チャンネルID: {auto_send_channel_id}）")
+                force_send_flag = False  # フラグをリセット
+            else:
+                print(f"[テスト] エラー: チャンネルが見つかりません。channel_id={auto_send_channel_id}")
+        else:
+            print(f"[テスト] エラー: channel_idが設定されていません")
+    
     # スケジュールチェックタスクを開始
     if not scheduler_task.is_running():
         scheduler_task.start()
@@ -100,8 +120,10 @@ async def check_and_send_summary():
         
         # 今日メッセージを送信したかチェック
         if date_str in sent_dates:
-            if config.get("channel_id"):
-                channel = bot.get_channel(int(config["channel_id"]))
+            # 自動送信用のチャンネルIDを取得（設定されていない場合は通常のchannel_idを使用）
+            auto_send_channel_id = config.get("auto_send_channel_id") or config.get("channel_id")
+            if auto_send_channel_id:
+                channel = bot.get_channel(int(auto_send_channel_id))
                 if channel:
                     summary = data_manager.get_summary(now)
                     
@@ -195,12 +217,15 @@ async def send_question_message(channel: discord.TextChannel, date: datetime = N
 # スケジューラーのコールバックを設定
 # メッセージ送信日を記録（集計結果送信用）
 sent_dates = set()
+force_send_flag = False  # テスト用: 即座にメッセージを送信するフラグ
 
 async def scheduled_send_callback(date: datetime):
     """スケジュール送信コールバック"""
     print(f"[コールバック] メッセージ送信コールバックが呼ばれました: {date.strftime('%Y-%m-%d %H:%M:%S')}")
-    if config.get("channel_id"):
-        channel = bot.get_channel(int(config["channel_id"]))
+    # 自動送信用のチャンネルIDを取得（設定されていない場合は通常のchannel_idを使用）
+    auto_send_channel_id = config.get("auto_send_channel_id") or config.get("channel_id")
+    if auto_send_channel_id:
+        channel = bot.get_channel(int(auto_send_channel_id))
         if channel:
             print(f"[コールバック] チャンネルが見つかりました: {channel.name}")
             await send_question_message(channel, date)
@@ -209,7 +234,7 @@ async def scheduled_send_callback(date: datetime):
             sent_dates.add(date_str)
             print(f"[コールバック] メッセージを送信しました。送信日付を記録: {date_str}")
         else:
-            print(f"[コールバック] エラー: チャンネルが見つかりません。channel_id={config.get('channel_id')}")
+            print(f"[コールバック] エラー: チャンネルが見つかりません。channel_id={auto_send_channel_id}")
     else:
         print(f"[コールバック] エラー: channel_idが設定されていません")
 
@@ -489,8 +514,18 @@ async def send_question(interaction: discord.Interaction):
 async def show_summary(interaction: discord.Interaction):
     """集計結果を表示"""
     # 指定されたチャンネルでのみコマンドを実行可能
+    # channel_idとauto_send_channel_idの両方で実行可能
     allowed_channel_id = config.get("channel_id")
-    if allowed_channel_id and str(interaction.channel.id) != str(allowed_channel_id):
+    auto_send_channel_id = config.get("auto_send_channel_id")
+    
+    # どちらかのチャンネルで実行されているかチェック
+    is_allowed_channel = (
+        (not allowed_channel_id and not auto_send_channel_id) or  # チャンネル制限がない場合
+        (allowed_channel_id and str(interaction.channel.id) == str(allowed_channel_id)) or  # channel_idと一致
+        (auto_send_channel_id and str(interaction.channel.id) == str(auto_send_channel_id))  # auto_send_channel_idと一致
+    )
+    
+    if not is_allowed_channel:
         await interaction.response.send_message(
             f"このコマンドは指定されたチャンネルでのみ使用できます。",
             ephemeral=True
@@ -547,8 +582,40 @@ async def show_summary(interaction: discord.Interaction):
 
 
 if __name__ == "__main__":
+    # コマンドライン引数の解析
+    parser = argparse.ArgumentParser(description="Discordボット")
+    parser.add_argument(
+        "--test-send-time",
+        type=str,
+        help="テスト用の送信時刻を指定（HH:MM形式、例: 20:00）"
+    )
+    parser.add_argument(
+        "--force-send",
+        action="store_true",
+        help="即座にメッセージを送信（テスト用）"
+    )
+    args = parser.parse_args()
+    
     if not config.get("token"):
         print("エラー: config.jsonにトークンが設定されていません。")
     else:
+        # テスト用の送信時刻が指定されている場合
+        if args.test_send_time:
+            try:
+                hour, minute = map(int, args.test_send_time.split(":"))
+                test_send_time = time(hour, minute)
+                # スケジューラーの送信時刻を一時的に変更
+                scheduler.send_time = test_send_time
+                print(f"[テスト] 送信時刻を {args.test_send_time} に設定しました")
+            except ValueError:
+                print(f"エラー: 送信時刻の形式が正しくありません。HH:MM形式で指定してください（例: 20:00）")
+                exit(1)
+        
+        # 即座に送信する場合（テスト用）
+        if args.force_send:
+            # グローバルフラグを設定（on_readyでチェック）
+            # モジュールレベル変数なので直接参照可能
+            globals()['force_send_flag'] = True
+        
         bot.run(config["token"])
 
