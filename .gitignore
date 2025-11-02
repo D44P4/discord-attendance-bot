@@ -28,8 +28,12 @@ env/
 # BigQuery credentials
 *.json
 !package.json
+!config.json.example
 credentials/
 *.key
+
+# Bot configuration (contains sensitive data)
+config.json
 
 # IDE
 .vscode/

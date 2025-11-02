@@ -1,0 +1,9 @@
+{
+  "token": "YOUR_BOT_TOKEN_HERE",
+  "guild_id": "YOUR_GUILD_ID_HERE",
+  "channel_id": "YOUR_CHANNEL_ID_HERE",
+  "send_time": "20:00",
+  "weekdays": [4, 5],
+  "send_before_holidays": true
+}
+
