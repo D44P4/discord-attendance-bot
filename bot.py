@@ -15,9 +15,10 @@ from utils.holidays import HolidayManager
 def load_config():
     """設定ファイルを読み込む（環境変数優先）"""
     # 環境変数から読み込む（Railway等のクラウド環境向け）
-    if os.environ.get("DISCORD_TOKEN"):
+    discord_token = os.environ.get("DISCORD_TOKEN")
+    if discord_token:
         config = {
-            "token": os.environ.get("DISCORD_TOKEN"),
+            "token": discord_token,
             "guild_id": os.environ.get("GUILD_ID", ""),
             "channel_id": os.environ.get("CHANNEL_ID", ""),
             "send_time": os.environ.get("SEND_TIME", "20:00"),
@@ -27,8 +28,16 @@ def load_config():
         return config
     
     # 設定ファイルから読み込む（ローカル環境向け）
-    with open("config.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+    config_path = "config.json"
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    else:
+        # 環境変数も設定ファイルもない場合はエラー
+        raise ValueError(
+            "設定が見つかりません。環境変数DISCORD_TOKENを設定するか、"
+            "config.jsonファイルを作成してください。"
+        )
 
 
 # Intentsの設定
