@@ -13,7 +13,20 @@ from utils.holidays import HolidayManager
 
 # Botの設定を読み込み
 def load_config():
-    """設定ファイルを読み込む"""
+    """設定ファイルを読み込む（環境変数優先）"""
+    # 環境変数から読み込む（Railway等のクラウド環境向け）
+    if os.environ.get("DISCORD_TOKEN"):
+        config = {
+            "token": os.environ.get("DISCORD_TOKEN"),
+            "guild_id": os.environ.get("GUILD_ID", ""),
+            "channel_id": os.environ.get("CHANNEL_ID", ""),
+            "send_time": os.environ.get("SEND_TIME", "20:00"),
+            "weekdays": json.loads(os.environ.get("WEEKDAYS", "[4,5]")),
+            "send_before_holidays": os.environ.get("SEND_BEFORE_HOLIDAYS", "true").lower() == "true"
+        }
+        return config
+    
+    # 設定ファイルから読み込む（ローカル環境向け）
     with open("config.json", "r", encoding="utf-8") as f:
         return json.load(f)
 

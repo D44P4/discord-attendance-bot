@@ -81,6 +81,38 @@ python bot.py
 - 回答は`data/responses.json`に保存
 - ユーザーID、参加可否、時刻情報を記録
 
+## Railwayへのデプロイ
+
+### 1. Railwayアカウントの作成
+1. [Railway](https://railway.app/)にアクセス
+2. 「Login」をクリックしてGitHubアカウントでログイン
+
+### 2. プロジェクトの作成
+1. Railwayダッシュボードで「New Project」をクリック
+2. 「Deploy from GitHub repo」を選択
+3. `discord-attendance-bot`リポジトリを選択して接続
+
+### 3. 環境変数の設定
+Railwayダッシュボードで以下の環境変数を設定：
+
+- `DISCORD_TOKEN`: Discord Botトークン
+- `GUILD_ID`: サーバー（ギルド）ID
+- `CHANNEL_ID`: チャンネルID
+- `SEND_TIME`: 送信時刻（デフォルト: `20:00`）
+- `WEEKDAYS`: 送信曜日（デフォルト: `[4,5]`、JSON形式）
+- `SEND_BEFORE_HOLIDAYS`: 祝前日送信（デフォルト: `true`）
+
+**設定方法：**
+1. プロジェクトを選択
+2. 「Variables」タブを開く
+3. 「New Variable」をクリックして環境変数を追加
+
+### 4. 自動デプロイ
+GitHubにプッシュすると自動的にデプロイされます。
+
+### 5. ログの確認
+Railwayダッシュボードの「Deployments」タブでログを確認できます。
+
 ## その他のセットアップ
 
 1. Python仮想環境の作成と有効化
