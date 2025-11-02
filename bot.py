@@ -72,10 +72,13 @@ async def on_ready():
         guild_id = config.get("guild_id")
         
         # まずサーバー限定で同期（即座に反映）
-        if guild_id:
-            guild = discord.Object(id=int(guild_id))
-            synced_guild = await bot.tree.sync(guild=guild)
-            print(f"サーバー限定で {len(synced_guild)} 個のコマンドを同期しました: {[cmd.name for cmd in synced_guild]}")
+        if guild_id and str(guild_id).strip():
+            try:
+                guild = discord.Object(id=int(guild_id))
+                synced_guild = await bot.tree.sync(guild=guild)
+                print(f"サーバー限定で {len(synced_guild)} 個のコマンドを同期しました: {[cmd.name for cmd in synced_guild]}")
+            except (ValueError, TypeError) as e:
+                print(f"サーバー限定コマンドの同期をスキップしました（guild_idが無効）: {e}")
         
         # グローバルでも同期（反映に時間がかかるが、どのサーバーでも使える）
         synced_global = await bot.tree.sync()
