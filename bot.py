@@ -23,7 +23,7 @@ def load_config():
             "guild_id": os.environ.get("GUILD_ID", ""),
             "channel_id": os.environ.get("CHANNEL_ID", ""),
             "auto_send_channel_id": os.environ.get("AUTO_SEND_CHANNEL_ID", ""),
-            "send_time": os.environ.get("SEND_TIME", "20:00"),
+            "send_time": os.environ.get("SEND_TIME", "19:00"),
             "weekdays": json.loads(os.environ.get("WEEKDAYS", "[4,5]")),
             "send_before_holidays": os.environ.get("SEND_BEFORE_HOLIDAYS", "true").lower() == "true"
         }
@@ -111,11 +111,11 @@ async def on_ready():
 
 
 async def check_and_send_summary():
-    """22時に集計結果を送信するチェック"""
+    """21時に集計結果を送信するチェック"""
     now = datetime.now(pytz.timezone("Asia/Tokyo"))
     
-    # 22時になったかチェック
-    if now.hour == 22 and now.minute == 0:
+    # 21時になったかチェック
+    if now.hour == 21 and now.minute == 0:
         date_str = now.strftime("%Y-%m-%d")
         
         # 今日メッセージを送信したかチェック
@@ -179,7 +179,7 @@ async def check_and_send_summary():
 async def scheduler_task():
     """定期メッセージ送信タスク"""
     await scheduler.check_and_send()
-    # 集計結果送信チェック（22時に実行）
+    # 集計結果送信チェック（21時に実行）
     await check_and_send_summary()
 
 
