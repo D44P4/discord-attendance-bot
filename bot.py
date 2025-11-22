@@ -156,7 +156,10 @@ async def check_and_send_summary():
                             user_id = user_data['user_id']
                             start_time = user_data.get('start_time', '未設定')
                             end_time = user_data.get('end_time', '未設定')
-                            user_list.append(f"<@{user_id}>: {start_time} ～ {end_time}")
+                            # 表示用に00:00を24:00に変換
+                            start_time_display = format_time_display(start_time) if start_time != '未設定' else start_time
+                            end_time_display = format_time_display(end_time) if end_time != '未設定' else end_time
+                            user_list.append(f"<@{user_id}>: {start_time_display} ～ {end_time_display}")
                         
                         embed.add_field(
                             name="参加可能なユーザー",
@@ -289,6 +292,13 @@ class AttendanceView(discord.ui.View):
         )
 
 
+def format_time_display(time_str: str) -> str:
+    """時刻表示を整形（00:00を24:00に変換）"""
+    if time_str == "00:00":
+        return "24:00"
+    return time_str
+
+
 class TimeSelectionView(discord.ui.View):
     """時刻選択用のビュー"""
     
@@ -328,12 +338,22 @@ class TimeSelectionView(discord.ui.View):
         self.add_item(self.confirm_button)
     
     def _create_time_options(self, select_type: str = "start"):
-        """時刻選択オプションを作成（30分単位、降順）"""
-        options = []
-        # 30分単位の選択肢（23:30～0:00まで降順、全48個）
-        # DiscordのSelectは25個までなので、開始時刻と終了時刻で範囲を分ける
+        """時刻選択オプションを作成（30分単位、降順、24:00～20:00）"""
+        # 24:00（0:00）から20:00まで30分刻みで降順
+        # 24:00, 23:30, 23:00, 22:30, 22:00, 21:30, 21:00, 20:30, 20:00
         all_options = []
-        for hour in range(23, -1, -1):  # 23時から0時まで降順
+        
+        # 24:00（0:00）を最初に追加
+        all_options.append(
+            discord.SelectOption(
+                label="24:00",
+                value="00:00",
+                description="24:00に設定"
+            )
+        )
+        
+        # 23:30から20:00まで30分刻みで降順
+        for hour in range(23, 19, -1):  # 23時から20時まで降順
             for minute in [30, 0]:  # 30分、0分の順（降順）
                 time_str = f"{hour:02d}:{minute:02d}"
                 all_options.append(
@@ -344,12 +364,11 @@ class TimeSelectionView(discord.ui.View):
                     )
                 )
         
-        # 開始時刻用: 23:30～12:00（25個）
-        # 終了時刻用: 11:30～0:00（23個、25個以内）
-        if select_type == "start":
-            return all_options[:25]  # 23:30～12:00
-        else:  # end
-            return all_options[25:]  # 11:30～0:00
+        # DiscordのSelectは25個までなので、開始時刻と終了時刻で範囲を分ける
+        # 全9個なので、両方とも同じリストを使用可能
+        # ただし、開始時刻と終了時刻で同じリストを使うと混乱する可能性があるため、
+        # 開始時刻用と終了時刻用で同じリストを返す（9個なので25個以内）
+        return all_options
     
     async def _start_time_callback(self, interaction: discord.Interaction):
         """開始時刻が選択されたときの処理"""
@@ -378,7 +397,7 @@ class TimeSelectionView(discord.ui.View):
             view.confirm_button.disabled = True
         
         await interaction.response.edit_message(
-            content=f"参加可能時間帯を選択してください\n\n開始時刻: {self.start_time or '未選択'}\n終了時刻: {self.end_time or '未選択'}",
+            content=f"参加可能時間帯を選択してください\n\n開始時刻: {format_time_display(self.start_time) if self.start_time else '未選択'}\n終了時刻: {format_time_display(self.end_time) if self.end_time else '未選択'}",
             view=view
         )
     
@@ -441,11 +460,11 @@ class TimeSelectionView(discord.ui.View):
         
         # メッセージの組み立て
         if self.start_time and self.end_time:
-            message = f"回答を記録しました。\n参加可能時間: {self.start_time} ～ {self.end_time}"
+            message = f"回答を記録しました。\n参加可能時間: {format_time_display(self.start_time)} ～ {format_time_display(self.end_time)}"
         elif self.start_time:
-            message = f"回答を記録しました。\n参加可能開始時刻: {self.start_time}"
+            message = f"回答を記録しました。\n参加可能開始時刻: {format_time_display(self.start_time)}"
         else:
-            message = f"回答を記録しました。\n参加可能終了時刻: {self.end_time}"
+            message = f"回答を記録しました。\n参加可能終了時刻: {format_time_display(self.end_time)}"
         
         await interaction.response.send_message(
             message,
@@ -564,7 +583,10 @@ async def show_summary(interaction: discord.Interaction):
             user_id = user_data['user_id']
             start_time = user_data.get('start_time', '未設定')
             end_time = user_data.get('end_time', '未設定')
-            user_list.append(f"<@{user_id}>: {start_time} ～ {end_time}")
+            # 表示用に00:00を24:00に変換
+            start_time_display = format_time_display(start_time) if start_time != '未設定' else start_time
+            end_time_display = format_time_display(end_time) if end_time != '未設定' else end_time
+            user_list.append(f"<@{user_id}>: {start_time_display} ～ {end_time_display}")
         
         embed.add_field(
             name="参加可能なユーザー",
