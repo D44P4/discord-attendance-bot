@@ -105,17 +105,23 @@ async def sync_commands(force_guild_only: bool = False):
         
         # まずサーバー限定で同期（即座に反映）
         guild_sync_success = False
+        guild_sync_count = 0
         if guild_id and str(guild_id).strip():
             try:
                 guild = discord.Object(id=int(guild_id))
                 print(f"[コマンド同期] サーバー限定同期を開始します（guild_id: {guild_id}）")
                 synced_guild = await bot.tree.sync(guild=guild)
+                guild_sync_count = len(synced_guild)
                 synced_commands.extend([cmd.name for cmd in synced_guild])
-                print(f"[コマンド同期] サーバー限定で {len(synced_guild)} 個のコマンドを同期しました: {[cmd.name for cmd in synced_guild]}")
-                guild_sync_success = True
+                print(f"[コマンド同期] サーバー限定で {guild_sync_count} 個のコマンドを同期しました: {[cmd.name for cmd in synced_guild]}")
                 
-                # サーバー限定同期が成功した場合、少し待つ
-                await asyncio.sleep(1)
+                # サーバー限定同期が成功した場合（1個以上同期された場合）
+                if guild_sync_count > 0:
+                    guild_sync_success = True
+                    # サーバー限定同期が成功した場合、少し待つ
+                    await asyncio.sleep(1)
+                else:
+                    print(f"[コマンド同期] 警告: サーバー限定同期で0個のコマンドが返されました。グローバル同期を試行します。")
             except (ValueError, TypeError) as e:
                 print(f"[コマンド同期] サーバー限定コマンドの同期をスキップしました（guild_idが無効）: {e}")
             except Exception as e:
@@ -123,8 +129,8 @@ async def sync_commands(force_guild_only: bool = False):
                 import traceback
                 traceback.print_exc()
         
-        # グローバル同期は、サーバー限定同期が失敗した場合、またはforce_guild_onlyがFalseの場合のみ実行
-        if not force_guild_only and not guild_sync_success:
+        # グローバル同期は、サーバー限定同期が失敗した場合、または0個の場合、またはforce_guild_onlyがFalseの場合のみ実行
+        if not force_guild_only and (not guild_sync_success or guild_sync_count == 0):
             try:
                 print(f"[コマンド同期] グローバル同期を開始します（サーバー限定同期が失敗したため）")
                 synced_global = await bot.tree.sync()
