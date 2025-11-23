@@ -24,6 +24,7 @@ def load_config():
             "channel_id": os.environ.get("CHANNEL_ID", ""),
             "auto_send_channel_id": os.environ.get("AUTO_SEND_CHANNEL_ID", ""),
             "send_time": os.environ.get("SEND_TIME", "19:00"),
+            "summary_time": os.environ.get("SUMMARY_TIME", "22:00"),
             "weekdays": json.loads(os.environ.get("WEEKDAYS", "[4,5]")),
             "send_before_holidays": os.environ.get("SEND_BEFORE_HOLIDAYS", "true").lower() == "true"
         }
@@ -33,7 +34,11 @@ def load_config():
     config_path = "config.json"
     if os.path.exists(config_path):
         with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            config_data = json.load(f)
+            # summary_timeが存在しない場合はデフォルト値を設定
+            if "summary_time" not in config_data:
+                config_data["summary_time"] = "22:00"
+            return config_data
     else:
         # 環境変数も設定ファイルもない場合はエラー
         raise ValueError(
@@ -56,6 +61,94 @@ scheduler = Scheduler(config)
 data_manager = DataManager()
 holiday_manager = HolidayManager()
 
+def create_scheduler_task():
+    """スケジューラータスクを作成"""
+    @tasks.loop(minutes=1)
+    async def scheduler_task():
+        """定期メッセージ送信タスク"""
+        await scheduler.check_and_send()
+        # 集計結果送信チェック
+        await scheduler.check_and_send_summary()
+    return scheduler_task
+
+# スケジューラータスクの初期化
+scheduler_task = create_scheduler_task()
+
+def restart_scheduler():
+    """スケジューラーを再起動（設定変更時に呼び出す）"""
+    global scheduler_task
+    if scheduler_task and scheduler_task.is_running():
+        scheduler_task.cancel()
+    scheduler_task = create_scheduler_task()
+    scheduler_task.start()
+    print("[スケジューラー] スケジューラーを再起動しました")
+
+
+async def sync_commands(force_guild_only: bool = False):
+    """コマンドを同期（サーバー限定とグローバルの両方を試す）"""
+    try:
+        guild_id = config.get("guild_id")
+        synced_commands = []
+        
+        # Discord APIの準備を待つ
+        await asyncio.sleep(2)
+        
+        # まずサーバー限定で同期（即座に反映）
+        guild_sync_success = False
+        if guild_id and str(guild_id).strip():
+            try:
+                guild = discord.Object(id=int(guild_id))
+                print(f"[コマンド同期] サーバー限定同期を開始します（guild_id: {guild_id}）")
+                synced_guild = await bot.tree.sync(guild=guild)
+                synced_commands.extend([cmd.name for cmd in synced_guild])
+                print(f"[コマンド同期] サーバー限定で {len(synced_guild)} 個のコマンドを同期しました: {[cmd.name for cmd in synced_guild]}")
+                guild_sync_success = True
+                
+                # サーバー限定同期が成功した場合、少し待つ
+                await asyncio.sleep(1)
+            except (ValueError, TypeError) as e:
+                print(f"[コマンド同期] サーバー限定コマンドの同期をスキップしました（guild_idが無効）: {e}")
+            except Exception as e:
+                print(f"[コマンド同期] サーバー限定同期でエラーが発生しました: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # グローバル同期は、サーバー限定同期が失敗した場合、またはforce_guild_onlyがFalseの場合のみ実行
+        if not force_guild_only and not guild_sync_success:
+            try:
+                print(f"[コマンド同期] グローバル同期を開始します（サーバー限定同期が失敗したため）")
+                synced_global = await bot.tree.sync()
+                synced_commands.extend([cmd.name for cmd in synced_global])
+                print(f"[コマンド同期] グローバルで {len(synced_global)} 個のコマンドを同期しました: {[cmd.name for cmd in synced_global]}")
+            except Exception as e:
+                print(f"[コマンド同期] グローバル同期でエラーが発生しました: {e}")
+                import traceback
+                traceback.print_exc()
+        elif force_guild_only:
+            print(f"[コマンド同期] サーバー限定同期のみを実行しました（グローバル同期はスキップ）")
+        elif guild_sync_success:
+            print(f"[コマンド同期] サーバー限定同期が成功したため、グローバル同期はスキップしました（即座に反映されます）")
+        
+        # 全コマンドの一覧を表示
+        all_commands = set(synced_commands)
+        print(f"[コマンド同期] 同期された全コマンド（{len(all_commands)}個）: {sorted(all_commands)}")
+        
+        # 期待されるコマンドと比較
+        expected_commands = {"send_question", "show_summary", "set_send_time", "set_summary_time", "view_auto_times", "sync_commands"}
+        missing_commands = expected_commands - all_commands
+        if missing_commands:
+            print(f"[コマンド同期] 警告: 以下のコマンドが同期されていません: {sorted(missing_commands)}")
+        else:
+            print(f"[コマンド同期] すべてのコマンドが正常に同期されました")
+        
+        return all_commands
+        
+    except Exception as e:
+        print(f"[コマンド同期] コマンドの同期に失敗しました: {e}")
+        import traceback
+        traceback.print_exc()
+        return set()
+
 
 @bot.event
 async def on_ready():
@@ -63,7 +156,7 @@ async def on_ready():
     print(f"{bot.user} がログインしました")
     
     # 少し待ってからコマンドを同期（Discord APIの準備を待つ）
-    await asyncio.sleep(1)
+    await asyncio.sleep(2)
     
     # テスト用: 即座にメッセージを送信
     global force_send_flag
@@ -83,107 +176,95 @@ async def on_ready():
         else:
             print(f"[テスト] エラー: channel_idが設定されていません")
     
+    # スケジューラーのコールバックを設定
+    scheduler.set_send_callback(scheduled_send_callback)
+    scheduler.set_summary_callback(scheduled_summary_callback)
+    
     # スケジュールチェックタスクを開始
+    global scheduler_task
+    if scheduler_task is None:
+        scheduler_task = create_scheduler_task()
     if not scheduler_task.is_running():
         scheduler_task.start()
     
-    # コマンドを同期（サーバー限定とグローバルの両方を試す）
-    try:
-        guild_id = config.get("guild_id")
-        
-        # まずサーバー限定で同期（即座に反映）
-        if guild_id and str(guild_id).strip():
-            try:
-                guild = discord.Object(id=int(guild_id))
-                synced_guild = await bot.tree.sync(guild=guild)
-                print(f"サーバー限定で {len(synced_guild)} 個のコマンドを同期しました: {[cmd.name for cmd in synced_guild]}")
-            except (ValueError, TypeError) as e:
-                print(f"サーバー限定コマンドの同期をスキップしました（guild_idが無効）: {e}")
-        
-        # グローバルでも同期（反映に時間がかかるが、どのサーバーでも使える）
-        synced_global = await bot.tree.sync()
-        print(f"グローバルで {len(synced_global)} 個のコマンドを同期しました: {[cmd.name for cmd in synced_global]}")
-        
-    except Exception as e:
-        print(f"コマンドの同期に失敗しました: {e}")
-        import traceback
-        traceback.print_exc()
+    # コマンドを同期（サーバー限定同期を優先）
+    guild_id = config.get("guild_id")
+    if guild_id and str(guild_id).strip():
+        # サーバー限定同期のみを実行（即座に反映される）
+        await sync_commands(force_guild_only=True)
+    else:
+        # guild_idが設定されていない場合はグローバル同期
+        await sync_commands(force_guild_only=False)
 
 
-async def check_and_send_summary():
-    """21時に集計結果を送信するチェック"""
-    now = datetime.now(pytz.timezone("Asia/Tokyo"))
+async def scheduled_summary_callback(date: datetime):
+    """スケジュール集計結果送信コールバック"""
+    print(f"[コールバック] 集計結果送信コールバックが呼ばれました: {date.strftime('%Y-%m-%d %H:%M:%S')}")
+    date_str = date.strftime("%Y-%m-%d")
     
-    # 21時になったかチェック
-    if now.hour == 21 and now.minute == 0:
-        date_str = now.strftime("%Y-%m-%d")
-        
-        # 今日メッセージを送信したかチェック
-        if date_str in sent_dates:
-            # 自動送信用のチャンネルIDを取得（設定されていない場合は通常のchannel_idを使用）
-            auto_send_channel_id = config.get("auto_send_channel_id") or config.get("channel_id")
-            if auto_send_channel_id:
-                channel = bot.get_channel(int(auto_send_channel_id))
-                if channel:
-                    summary = data_manager.get_summary(now)
-                    
-                    embed = discord.Embed(
-                        title=f"{summary['date']} の集計結果",
-                        color=discord.Color.green()
-                    )
+    # 今日メッセージを送信したかチェック
+    if date_str in sent_dates:
+        # 自動送信用のチャンネルIDを取得（設定されていない場合は通常のchannel_idを使用）
+        auto_send_channel_id = config.get("auto_send_channel_id") or config.get("channel_id")
+        if auto_send_channel_id:
+            channel = bot.get_channel(int(auto_send_channel_id))
+            if channel:
+                summary = data_manager.get_summary(date)
+                
+                embed = discord.Embed(
+                    title=f"{summary['date']} の集計結果",
+                    color=discord.Color.green()
+                )
+                
+                embed.add_field(
+                    name="総回答数",
+                    value=f"{summary['total_responses']}件",
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="参加可能",
+                    value=f"{summary['attendable_count']}人",
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="参加不可",
+                    value=f"{summary['not_attendable_count']}人",
+                    inline=True
+                )
+                
+                if summary['attendable_users']:
+                    user_list = []
+                    for user_data in summary['attendable_users']:
+                        user_id = user_data['user_id']
+                        start_time = user_data.get('start_time', '未設定')
+                        end_time = user_data.get('end_time', '未設定')
+                        # 表示用に00:00を24:00に変換
+                        start_time_display = format_time_display(start_time) if start_time != '未設定' else start_time
+                        end_time_display = format_time_display(end_time) if end_time != '未設定' else end_time
+                        user_list.append(f"<@{user_id}>: {start_time_display} ～ {end_time_display}")
                     
                     embed.add_field(
-                        name="総回答数",
-                        value=f"{summary['total_responses']}件",
-                        inline=True
+                        name="参加可能なユーザー",
+                        value="\n".join(user_list) if user_list else "なし",
+                        inline=False
                     )
-                    
+                else:
                     embed.add_field(
-                        name="参加可能",
-                        value=f"{summary['attendable_count']}人",
-                        inline=True
+                        name="参加可能なユーザー",
+                        value="なし",
+                        inline=False
                     )
-                    
-                    embed.add_field(
-                        name="参加不可",
-                        value=f"{summary['not_attendable_count']}人",
-                        inline=True
-                    )
-                    
-                    if summary['attendable_users']:
-                        user_list = []
-                        for user_data in summary['attendable_users']:
-                            user_id = user_data['user_id']
-                            start_time = user_data.get('start_time', '未設定')
-                            end_time = user_data.get('end_time', '未設定')
-                            # 表示用に00:00を24:00に変換
-                            start_time_display = format_time_display(start_time) if start_time != '未設定' else start_time
-                            end_time_display = format_time_display(end_time) if end_time != '未設定' else end_time
-                            user_list.append(f"<@{user_id}>: {start_time_display} ～ {end_time_display}")
-                        
-                        embed.add_field(
-                            name="参加可能なユーザー",
-                            value="\n".join(user_list) if user_list else "なし",
-                            inline=False
-                        )
-                    else:
-                        embed.add_field(
-                            name="参加可能なユーザー",
-                            value="なし",
-                            inline=False
-                        )
-                    
-                    await channel.send(embed=embed)
-                    # 送信済みフラグを削除（1日1回のみ送信）
-                    sent_dates.discard(date_str)
-
-
-@tasks.loop(minutes=1)
-async def scheduler_task():
-    """定期メッセージ送信タスク"""
-    await scheduler.check_and_send()
-    # 集計結果送信チェック（21時に実行）
-    await check_and_send_summary()
+                
+                await channel.send(embed=embed)
+                # 送信済みフラグを削除（1日1回のみ送信）
+                sent_dates.discard(date_str)
+                print(f"[コールバック] 集計結果を送信しました。送信日付を削除: {date_str}")
+            else:
+                print(f"[コールバック] エラー: チャンネルが見つかりません。channel_id={auto_send_channel_id}")
+        else:
+            print(f"[コールバック] エラー: channel_idが設定されていません")
 
 
 async def send_question_message(channel: discord.TextChannel, date: datetime = None):
@@ -601,6 +682,238 @@ async def show_summary(interaction: discord.Interaction):
         )
     
     await interaction.response.send_message(embed=embed)
+
+
+def validate_time_format(time_str: str) -> bool:
+    """時間形式（HH:MM）を検証"""
+    try:
+        parts = time_str.split(":")
+        if len(parts) != 2:
+            return False
+        hour = int(parts[0])
+        minute = int(parts[1])
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            return False
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
+def save_config_to_file(config_data: dict):
+    """設定をconfig.jsonに保存"""
+    config_path = "config.json"
+    # 環境変数が設定されている場合は、config.jsonに保存しない
+    if os.environ.get("DISCORD_TOKEN"):
+        print("[設定] 環境変数が設定されているため、config.jsonには保存しません")
+        return
+    
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            existing_config = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        existing_config = {}
+    
+    # 既存の設定を更新（トークンなどの機密情報は保持）
+    for key, value in config_data.items():
+        if key != "token":  # トークンは保存しない
+            existing_config[key] = value
+    
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(existing_config, f, ensure_ascii=False, indent=2)
+    print(f"[設定] config.jsonに保存しました: {list(config_data.keys())}")
+
+
+@bot.tree.command(name="set_send_time", description="send_questionの自動実行時間を設定")
+async def set_send_time(interaction: discord.Interaction, time: str):
+    """send_questionの自動実行時間を設定"""
+    try:
+        # 時間形式の検証
+        if not validate_time_format(time):
+            await interaction.response.send_message(
+                "時間形式が正しくありません。HH:MM形式で指定してください（例: 19:00）。",
+                ephemeral=True
+            )
+            return
+        
+        # 設定を更新
+        config["send_time"] = time
+        scheduler.send_time = scheduler._parse_time(time)
+        
+        # config.jsonに保存（環境変数が設定されていない場合のみ）
+        save_config_to_file({"send_time": time})
+        
+        # スケジューラーを再起動
+        restart_scheduler()
+        
+        await interaction.response.send_message(
+            f"send_questionの自動実行時間を {time} に設定しました。",
+            ephemeral=True
+        )
+    except Exception as e:
+        print(f"set_send_timeコマンドでエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except:
+            await interaction.followup.send(
+                "エラーが発生しました。管理者に連絡してください。",
+                ephemeral=True
+            )
+
+
+@bot.tree.command(name="set_summary_time", description="show_summaryの自動実行時間を設定")
+async def set_summary_time(interaction: discord.Interaction, time: str):
+    """show_summaryの自動実行時間を設定"""
+    try:
+        # 時間形式の検証
+        if not validate_time_format(time):
+            await interaction.response.send_message(
+                "時間形式が正しくありません。HH:MM形式で指定してください（例: 22:00）。",
+                ephemeral=True
+            )
+            return
+        
+        # 設定を更新
+        config["summary_time"] = time
+        scheduler.summary_time = scheduler._parse_time(time)
+        
+        # config.jsonに保存（環境変数が設定されていない場合のみ）
+        save_config_to_file({"summary_time": time})
+        
+        # スケジューラーを再起動
+        restart_scheduler()
+        
+        await interaction.response.send_message(
+            f"show_summaryの自動実行時間を {time} に設定しました。",
+            ephemeral=True
+        )
+    except Exception as e:
+        print(f"set_summary_timeコマンドでエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except:
+            await interaction.followup.send(
+                "エラーが発生しました。管理者に連絡してください。",
+                ephemeral=True
+            )
+
+
+@bot.tree.command(name="view_auto_times", description="自動実行時間の設定を確認")
+async def view_auto_times(interaction: discord.Interaction):
+    """自動実行時間の設定を確認"""
+    try:
+        # 現在の設定を取得
+        send_time = config.get("send_time", "20:00")
+        summary_time = config.get("summary_time", "22:00")
+        
+        # 設定元を確認
+        is_env_send = os.environ.get("SEND_TIME") is not None
+        is_env_summary = os.environ.get("SUMMARY_TIME") is not None
+        
+        embed = discord.Embed(
+            title="自動実行時間の設定",
+            color=discord.Color.blue()
+        )
+        
+        send_source = "環境変数" if is_env_send else "config.json"
+        summary_source = "環境変数" if is_env_summary else "config.json"
+        
+        embed.add_field(
+            name="send_questionの実行時間",
+            value=f"{send_time} ({send_source})",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="show_summaryの実行時間",
+            value=f"{summary_time} ({summary_source})",
+            inline=False
+        )
+        
+        if is_env_send or is_env_summary:
+            embed.set_footer(
+                text="環境変数が設定されている場合、コマンドで変更しても環境変数が優先されます。"
+            )
+        
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        print(f"view_auto_timesコマンドでエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except:
+            await interaction.followup.send(
+                "エラーが発生しました。管理者に連絡してください。",
+                ephemeral=True
+            )
+
+
+@bot.tree.command(name="sync_commands", description="コマンドを手動で同期（コマンドが表示されない場合に使用）")
+async def sync_commands_cmd(interaction: discord.Interaction):
+    """コマンドを手動で同期"""
+    try:
+        await interaction.response.defer(ephemeral=True)
+        
+        # サーバー限定同期のみを強制的に実行（即座に反映される）
+        guild_id = config.get("guild_id")
+        if guild_id and str(guild_id).strip():
+            synced_commands = await sync_commands(force_guild_only=True)
+        else:
+            synced_commands = await sync_commands(force_guild_only=False)
+        
+        if synced_commands:
+            command_list = "\n".join(f"- `/{cmd}`" for cmd in sorted(synced_commands))
+            embed = discord.Embed(
+                title="コマンド同期完了",
+                description=f"{len(synced_commands)}個のコマンドを同期しました。",
+                color=discord.Color.green()
+            )
+            embed.add_field(
+                name="同期されたコマンド",
+                value=command_list,
+                inline=False
+            )
+            if guild_id and str(guild_id).strip():
+                embed.set_footer(
+                    text="サーバー限定同期を実行しました。Discordクライアントを再起動するか、数秒待ってからコマンドを確認してください。"
+                )
+            else:
+                embed.set_footer(
+                    text="グローバル同期を実行しました。反映には最大1時間かかる場合があります。"
+                )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await interaction.followup.send(
+                "コマンドの同期に失敗しました。ログを確認してください。",
+                ephemeral=True
+            )
+    except Exception as e:
+        print(f"sync_commandsコマンドでエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            await interaction.followup.send(
+                "エラーが発生しました。管理者に連絡してください。",
+                ephemeral=True
+            )
+        except:
+            pass
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ class Scheduler:
     def __init__(self, config: dict):
         """
         Args:
-            config: 設定辞書（weekdays, send_before_holidays, send_timeを含む）
+            config: 設定辞書（weekdays, send_before_holidays, send_time, summary_timeを含む）
         """
         self.config = config
         self.jst = pytz.timezone("Asia/Tokyo")
@@ -20,7 +20,9 @@ class Scheduler:
         self.weekdays = config.get("weekdays", [4, 5])  # デフォルト: 金曜日、土曜日
         self.send_before_holidays = config.get("send_before_holidays", True)
         self.send_time = self._parse_time(config.get("send_time", "20:00"))
+        self.summary_time = self._parse_time(config.get("summary_time", "22:00"))
         self.send_callback = None
+        self.summary_callback = None
     
     def _parse_time(self, time_str: str) -> time:
         """
@@ -38,6 +40,10 @@ class Scheduler:
     def set_send_callback(self, callback):
         """送信コールバック関数を設定"""
         self.send_callback = callback
+    
+    def set_summary_callback(self, callback):
+        """集計結果送信コールバック関数を設定"""
+        self.summary_callback = callback
     
     def should_send_today(self, date: Optional[datetime] = None) -> bool:
         """
@@ -97,6 +103,29 @@ class Scheduler:
                     print(f"[スケジューラー] エラー: send_callbackが設定されていません")
             else:
                 print(f"[スケジューラー] 今日は送信対象外です（曜日チェックと祝前日チェック）")
+    
+    _last_sent_summary_minute = None  # クラス変数として追加
+    
+    async def check_and_send_summary(self):
+        """現在時刻をチェックして、集計結果送信時刻になったらメッセージを送信"""
+        now = datetime.now(self.jst)
+        current_time = now.time()
+        
+        # 集計結果送信時刻かどうかをチェック（同じ分内で重複送信を防ぐ）
+        if (current_time.hour == self.summary_time.hour and
+            current_time.minute == self.summary_time.minute):
+            
+            # 同じ分内で既に送信済みならスキップ
+            current_minute_key = f"{now.year}-{now.month}-{now.day}-{current_time.hour}-{current_time.minute}"
+            if hasattr(self, '_last_sent_summary_minute') and self._last_sent_summary_minute == current_minute_key:
+                return
+            
+            if self.summary_callback:
+                print(f"[スケジューラー] 集計結果を送信します")
+                await self.summary_callback(now)
+                self._last_sent_summary_minute = current_minute_key
+            else:
+                print(f"[スケジューラー] エラー: summary_callbackが設定されていません")
     
     def get_next_send_datetime(self) -> Optional[datetime]:
         """
