@@ -74,11 +74,14 @@ def create_scheduler_task():
 # スケジューラータスクの初期化
 scheduler_task = create_scheduler_task()
 
-def restart_scheduler():
+async def restart_scheduler():
     """スケジューラーを再起動（設定変更時に呼び出す）"""
     global scheduler_task
     if scheduler_task and scheduler_task.is_running():
         scheduler_task.cancel()
+        # タスクが完全に停止するまで待機
+        while scheduler_task.is_running():
+            await asyncio.sleep(0.1)
     scheduler_task = create_scheduler_task()
     scheduler_task.start()
     print("[スケジューラー] スケジューラーを再起動しました")
@@ -809,7 +812,7 @@ async def set_send_time(interaction: discord.Interaction, time: str):
         )
         
         # スケジューラーを再起動（応答後に実行）
-        restart_scheduler()
+        await restart_scheduler()
     except Exception as e:
         print(f"set_send_timeコマンドでエラーが発生しました: {e}")
         import traceback
@@ -855,7 +858,7 @@ async def set_summary_time(interaction: discord.Interaction, time: str):
         )
         
         # スケジューラーを再起動（応答後に実行）
-        restart_scheduler()
+        await restart_scheduler()
     except Exception as e:
         print(f"set_summary_timeコマンドでエラーが発生しました: {e}")
         import traceback

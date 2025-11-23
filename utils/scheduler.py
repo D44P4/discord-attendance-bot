@@ -23,6 +23,8 @@ class Scheduler:
         self.summary_time = self._parse_time(config.get("summary_time", "22:00"))
         self.send_callback = None
         self.summary_callback = None
+        self._last_sent_minute = None
+        self._last_sent_summary_minute = None
     
     def _parse_time(self, time_str: str) -> time:
         """
@@ -75,8 +77,6 @@ class Scheduler:
         
         return False
     
-    _last_sent_minute = None  # クラス変数として追加
-    
     async def check_and_send(self):
         """現在時刻をチェックして、送信時刻になったらメッセージを送信"""
         now = datetime.now(self.jst)
@@ -103,8 +103,6 @@ class Scheduler:
                     print(f"[スケジューラー] エラー: send_callbackが設定されていません")
             else:
                 print(f"[スケジューラー] 今日は送信対象外です（曜日チェックと祝前日チェック）")
-    
-    _last_sent_summary_minute = None  # クラス変数として追加
     
     async def check_and_send_summary(self):
         """現在時刻をチェックして、集計結果送信時刻になったらメッセージを送信"""
