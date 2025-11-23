@@ -20,11 +20,13 @@ DiscordボットをKoyebにデプロイする手順です。
 ### 基本設定
 
 - **Name**: アプリケーション名（例: `discord-attendance-bot`）
-- **Type**: `Web Service`を選択
+- **Service Type**: `Worker`を選択（DiscordボットはHTTPサーバーではないため）
 - **Build Command**: 空欄（Pythonの場合は自動検出）
-- **Run Command**: `python bot.py`（Procfileの`web:`形式が自動検出されます）
+- **Run Command**: `python bot.py`
 
-**注意：** `Procfile`は`web: python bot.py`形式で記述してください。Koyebは`worker:`形式を認識しません。
+**重要：** 
+- Service Typeは`Worker`を選択してください。DiscordボットはHTTPサーバーを提供しないため、`Web Service`ではなく`Worker`が適切です。
+- `Procfile`は`web: python bot.py`または`worker: python bot.py`形式で記述できますが、Service Typeを`Worker`に設定している場合は`worker:`形式が推奨されます。
 
 ### 環境変数の設定
 
@@ -118,18 +120,23 @@ Railwayで設定していた環境変数をKoyebに移行：
 
 ### ヘルスチェックに失敗する
 
-**エラーメッセージ：** "Your application failed to pass the initial health checks"
+**エラーメッセージ：** "TCP health check failed on port 8000" または "Your application failed to pass the initial health checks"
 
-**原因：** KoyebはデフォルトでHTTPヘルスチェックを行いますが、DiscordボットはHTTPサーバーではないため応答できません。
+**原因：** Service Typeを`Web Service`に設定している場合、KoyebはデフォルトでHTTPヘルスチェックを行いますが、DiscordボットはHTTPサーバーではないため応答できません。
 
 **解決方法：**
-1. Koyebダッシュボードでアプリケーションを選択
-2. 「Settings」タブを開く
-3. 「Health Checks」セクションを開く
-4. 「Disable Health Checks」を有効化（またはカスタムヘルスチェックを設定）
-5. 「Save」をクリックして再デプロイ
+1. **推奨：** Service Typeを`Worker`に変更する（ヘルスチェックが不要になります）
+   - Koyebダッシュボードでアプリケーションを選択
+   - 「Settings」タブを開く
+   - 「General」セクションで「Service Type」を`Worker`に変更
+   - 「Save」をクリックして再デプロイ
 
-**注意：** ヘルスチェックを無効化すると、アプリケーションの状態監視ができなくなりますが、Discordボットの動作には影響しません。
+2. **代替方法：** Service Typeを`Web Service`のまま使用する場合
+   - 「Settings」タブの「Health Checks」セクションを開く
+   - 「Disable Health Checks」を有効化（またはカスタムヘルスチェックを設定）
+   - 「Save」をクリックして再デプロイ
+
+**注意：** Service Typeを`Worker`に設定すると、ヘルスチェックが不要になり、Discordボットに最適な設定になります。
 
 ### ボットが起動しない
 
