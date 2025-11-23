@@ -600,11 +600,8 @@ class TimeSelectionView(discord.ui.View):
 async def send_question(interaction: discord.Interaction):
     """手動で質問メッセージを送信"""
     try:
-        # 先に応答を遅延させる（3秒以内に応答する必要があるため）
-        await interaction.response.defer(ephemeral=False)
-        
         if not interaction.channel:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "チャンネルが見つかりません。",
                 ephemeral=True
             )
@@ -613,7 +610,7 @@ async def send_question(interaction: discord.Interaction):
         # 指定されたチャンネルでのみコマンドを実行可能
         allowed_channel_id = config.get("channel_id")
         if allowed_channel_id and str(interaction.channel.id) != str(allowed_channel_id):
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"このコマンドは指定されたチャンネルでのみ使用できます。",
                 ephemeral=True
             )
@@ -632,7 +629,7 @@ async def send_question(interaction: discord.Interaction):
         # ボタンの作成
         view = AttendanceView(date)
         
-        await interaction.followup.send(
+        await interaction.response.send_message(
             embed=embed,
             view=view
         )
@@ -641,13 +638,18 @@ async def send_question(interaction: discord.Interaction):
         import traceback
         traceback.print_exc()
         try:
-            # defer()を使用しているため、常にfollowup.send()を使用
-            await interaction.followup.send(
-                "エラーが発生しました。管理者に連絡してください。",
-                ephemeral=True
-            )
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
         except Exception as followup_error:
-            print(f"followup.send()でもエラーが発生しました: {followup_error}")
+            print(f"エラーメッセージの送信に失敗しました: {followup_error}")
 
 
 @bot.tree.command(name="show_summary", description="集計結果を表示")
