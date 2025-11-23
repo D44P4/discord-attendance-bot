@@ -600,8 +600,11 @@ class TimeSelectionView(discord.ui.View):
 async def send_question(interaction: discord.Interaction):
     """手動で質問メッセージを送信"""
     try:
+        # 先に応答を遅延させる（3秒以内に応答する必要があるため）
+        await interaction.response.defer(ephemeral=False)
+        
         if not interaction.channel:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "チャンネルが見つかりません。",
                 ephemeral=True
             )
@@ -610,7 +613,7 @@ async def send_question(interaction: discord.Interaction):
         # 指定されたチャンネルでのみコマンドを実行可能
         allowed_channel_id = config.get("channel_id")
         if allowed_channel_id and str(interaction.channel.id) != str(allowed_channel_id):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"このコマンドは指定されたチャンネルでのみ使用できます。",
                 ephemeral=True
             )
@@ -629,7 +632,7 @@ async def send_question(interaction: discord.Interaction):
         # ボタンの作成
         view = AttendanceView(date)
         
-        await interaction.response.send_message(
+        await interaction.followup.send(
             embed=embed,
             view=view
         )
