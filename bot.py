@@ -798,6 +798,9 @@ async def set_send_time(interaction: discord.Interaction, time: str):
             )
             return
         
+        # 即座に応答を送信（タイムアウトを防ぐ）
+        await interaction.response.defer(ephemeral=True)
+        
         # 設定を更新
         config["send_time"] = time
         scheduler.send_time = scheduler._parse_time(time)
@@ -805,14 +808,14 @@ async def set_send_time(interaction: discord.Interaction, time: str):
         # config.jsonに保存（環境変数が設定されていない場合のみ）
         save_config_to_file({"send_time": time})
         
-        # 先に応答を送信
-        await interaction.response.send_message(
+        # スケジューラーを再起動
+        await restart_scheduler()
+        
+        # 完了メッセージを送信
+        await interaction.followup.send(
             f"send_questionの自動実行時間を {time} に設定しました。",
             ephemeral=True
         )
-        
-        # スケジューラーを再起動（応答後に実行）
-        await restart_scheduler()
     except Exception as e:
         print(f"set_send_timeコマンドでエラーが発生しました: {e}")
         import traceback
@@ -844,6 +847,9 @@ async def set_summary_time(interaction: discord.Interaction, time: str):
             )
             return
         
+        # 即座に応答を送信（タイムアウトを防ぐ）
+        await interaction.response.defer(ephemeral=True)
+        
         # 設定を更新
         config["summary_time"] = time
         scheduler.summary_time = scheduler._parse_time(time)
@@ -851,14 +857,14 @@ async def set_summary_time(interaction: discord.Interaction, time: str):
         # config.jsonに保存（環境変数が設定されていない場合のみ）
         save_config_to_file({"summary_time": time})
         
-        # 先に応答を送信
-        await interaction.response.send_message(
+        # スケジューラーを再起動
+        await restart_scheduler()
+        
+        # 完了メッセージを送信
+        await interaction.followup.send(
             f"show_summaryの自動実行時間を {time} に設定しました。",
             ephemeral=True
         )
-        
-        # スケジューラーを再起動（応答後に実行）
-        await restart_scheduler()
     except Exception as e:
         print(f"set_summary_timeコマンドでエラーが発生しました: {e}")
         import traceback
