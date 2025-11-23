@@ -611,8 +611,18 @@ async def send_question(interaction: discord.Interaction):
             return
         
         # 指定されたチャンネルでのみコマンドを実行可能
+        # channel_idとauto_send_channel_idの両方で実行可能
         allowed_channel_id = config.get("channel_id")
-        if allowed_channel_id and str(interaction.channel.id) != str(allowed_channel_id):
+        auto_send_channel_id = config.get("auto_send_channel_id")
+        
+        # どちらかのチャンネルで実行されているかチェック
+        is_allowed_channel = (
+            (not allowed_channel_id and not auto_send_channel_id) or  # チャンネル制限がない場合
+            (allowed_channel_id and str(interaction.channel.id) == str(allowed_channel_id)) or  # channel_idと一致
+            (auto_send_channel_id and str(interaction.channel.id) == str(auto_send_channel_id))  # auto_send_channel_idと一致
+        )
+        
+        if not is_allowed_channel:
             await interaction.response.send_message(
                 f"このコマンドは指定されたチャンネルでのみ使用できます。",
                 ephemeral=True
