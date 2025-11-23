@@ -131,7 +131,12 @@ async def sync_commands(force_guild_only: bool = False):
         
         # グローバル同期は、サーバー限定同期が失敗した場合、または0個の場合、またはforce_guild_onlyがFalseの場合のみ実行
         # サーバー限定同期が0個の場合は、force_guild_onlyに関係なくグローバル同期を試行
-        if (not force_guild_only and (not guild_sync_success or guild_sync_count == 0)) or (force_guild_only and guild_sync_count == 0):
+        print(f"[コマンド同期] デバッグ: force_guild_only={force_guild_only}, guild_sync_success={guild_sync_success}, guild_sync_count={guild_sync_count}")
+        
+        should_run_global = (not force_guild_only and (not guild_sync_success or guild_sync_count == 0)) or (force_guild_only and guild_sync_count == 0)
+        print(f"[コマンド同期] デバッグ: should_run_global={should_run_global}")
+        
+        if should_run_global:
             try:
                 if guild_sync_count == 0:
                     print(f"[コマンド同期] グローバル同期を開始します（サーバー限定同期で0個のコマンドが返されたため）")
@@ -148,6 +153,8 @@ async def sync_commands(force_guild_only: bool = False):
             print(f"[コマンド同期] サーバー限定同期のみを実行しました（グローバル同期はスキップ）")
         elif guild_sync_success:
             print(f"[コマンド同期] サーバー限定同期が成功したため、グローバル同期はスキップしました（即座に反映されます）")
+        else:
+            print(f"[コマンド同期] デバッグ: 予期しない条件分岐に入りました")
         
         # 全コマンドの一覧を表示
         all_commands = set(synced_commands)
