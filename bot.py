@@ -772,6 +772,15 @@ def validate_time_format(time_str: str) -> bool:
         return False
 
 
+def validate_date_format(date_str: str) -> bool:
+    """日付形式（YYYY-MM-DD）を検証"""
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
 def save_config_to_file(config_data: dict):
     """設定をconfig.jsonに保存"""
     config_path = "config.json"
@@ -934,6 +943,256 @@ async def view_auto_times(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed)
     except Exception as e:
         print(f"view_auto_timesコマンドでエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except Exception as followup_error:
+            print(f"エラーメッセージの送信に失敗しました: {followup_error}")
+
+
+@bot.tree.command(name="check_schedule", description="指定された日付に自動実行されるかどうかを確認")
+async def check_schedule(interaction: discord.Interaction, date: str = None):
+    """指定された日付に自動実行されるかどうかを確認"""
+    try:
+        # 日付が指定されていない場合は今日
+        if date is None:
+            target_date = datetime.now(pytz.timezone("Asia/Tokyo"))
+        else:
+            # 日付形式の検証
+            if not validate_date_format(date):
+                await interaction.response.send_message(
+                    "日付形式が正しくありません。YYYY-MM-DD形式で指定してください（例: 2025-11-24）。",
+                    ephemeral=True
+                )
+                return
+            
+            # 日付をdatetimeオブジェクトに変換
+            target_date = datetime.strptime(date, "%Y-%m-%d")
+            target_date = pytz.timezone("Asia/Tokyo").localize(target_date)
+        
+        # スケジュールをチェック
+        result = scheduler.check_schedule_for_date(target_date)
+        
+        # 結果を埋め込みメッセージで表示
+        embed = discord.Embed(
+            title=f"{target_date.strftime('%Y年%m月%d日')} の自動実行確認",
+            color=discord.Color.green() if result['will_send'] else discord.Color.red()
+        )
+        
+        embed.add_field(
+            name="送信されるか",
+            value="✅ 送信されます" if result['will_send'] else "❌ 送信されません",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="理由",
+            value=result['reason'],
+            inline=False
+        )
+        
+        # 詳細情報
+        details = []
+        details.append(f"曜日一致: {'✅' if result['weekday_match'] else '❌'}")
+        details.append(f"祝前日: {'✅' if result['holiday_before'] else '❌'}")
+        details.append(f"予約済み: {'✅' if result['scheduled'] else '❌'}")
+        if result['scheduled_time']:
+            details.append(f"予約時刻: {result['scheduled_time'].strftime('%H:%M')}")
+        
+        embed.add_field(
+            name="詳細",
+            value="\n".join(details),
+            inline=False
+        )
+        
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        print(f"check_scheduleコマンドでエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except Exception as followup_error:
+            print(f"エラーメッセージの送信に失敗しました: {followup_error}")
+
+
+@bot.tree.command(name="schedule_send", description="指定された日時にメッセージを送信するように予約")
+async def schedule_send(interaction: discord.Interaction, date: str, time: str = None):
+    """指定された日時にメッセージを送信するように予約"""
+    try:
+        # 日付形式の検証
+        if not validate_date_format(date):
+            await interaction.response.send_message(
+                "日付形式が正しくありません。YYYY-MM-DD形式で指定してください（例: 2025-11-24）。",
+                ephemeral=True
+            )
+            return
+        
+        # 時刻が指定されていない場合は設定済みのsend_timeを使用
+        if time is None:
+            send_time = scheduler.send_time
+        else:
+            # 時刻形式の検証
+            if not validate_time_format(time):
+                await interaction.response.send_message(
+                    "時刻形式が正しくありません。HH:MM形式で指定してください（例: 20:00）。",
+                    ephemeral=True
+                )
+                return
+            send_time = scheduler._parse_time(time)
+        
+        # 日付をdatetimeオブジェクトに変換
+        target_date = datetime.strptime(date, "%Y-%m-%d")
+        target_date = pytz.timezone("Asia/Tokyo").localize(target_date)
+        target_date = datetime.combine(target_date.date(), send_time)
+        target_date = pytz.timezone("Asia/Tokyo").localize(target_date)
+        
+        # 過去の日付でないかチェック
+        now = datetime.now(pytz.timezone("Asia/Tokyo"))
+        if target_date < now:
+            await interaction.response.send_message(
+                "過去の日時は予約できません。未来の日時を指定してください。",
+                ephemeral=True
+            )
+            return
+        
+        # 予約を追加
+        scheduler.add_scheduled_send(target_date, send_time)
+        
+        await interaction.response.send_message(
+            f"予約を追加しました: {target_date.strftime('%Y年%m月%d日 %H:%M')}",
+            ephemeral=True
+        )
+    except Exception as e:
+        print(f"schedule_sendコマンドでエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except Exception as followup_error:
+            print(f"エラーメッセージの送信に失敗しました: {followup_error}")
+
+
+@bot.tree.command(name="list_schedules", description="予約されている送信の一覧を表示")
+async def list_schedules(interaction: discord.Interaction):
+    """予約されている送信の一覧を表示"""
+    try:
+        scheduled_sends = scheduler.get_scheduled_sends()
+        
+        if not scheduled_sends:
+            await interaction.response.send_message(
+                "予約されている送信はありません。",
+                ephemeral=True
+            )
+            return
+        
+        embed = discord.Embed(
+            title="予約されている送信一覧",
+            color=discord.Color.blue()
+        )
+        
+        schedule_list = []
+        for i, (scheduled_date, scheduled_time) in enumerate(scheduled_sends, 1):
+            schedule_list.append(
+                f"{i}. {scheduled_date.strftime('%Y年%m月%d日')} {scheduled_time.strftime('%H:%M')}"
+            )
+        
+        embed.add_field(
+            name=f"予約数: {len(scheduled_sends)}件",
+            value="\n".join(schedule_list) if schedule_list else "なし",
+            inline=False
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception as e:
+        print(f"list_schedulesコマンドでエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except Exception as followup_error:
+            print(f"エラーメッセージの送信に失敗しました: {followup_error}")
+
+
+@bot.tree.command(name="cancel_schedule", description="予約されている送信をキャンセル")
+async def cancel_schedule(interaction: discord.Interaction, date: str, time: str = None):
+    """予約されている送信をキャンセル"""
+    try:
+        # 日付形式の検証
+        if not validate_date_format(date):
+            await interaction.response.send_message(
+                "日付形式が正しくありません。YYYY-MM-DD形式で指定してください（例: 2025-11-24）。",
+                ephemeral=True
+            )
+            return
+        
+        # 時刻が指定されている場合は時刻形式の検証
+        send_time = None
+        if time is not None:
+            if not validate_time_format(time):
+                await interaction.response.send_message(
+                    "時刻形式が正しくありません。HH:MM形式で指定してください（例: 20:00）。",
+                    ephemeral=True
+                )
+                return
+            send_time = scheduler._parse_time(time)
+        
+        # 日付をdatetimeオブジェクトに変換
+        target_date = datetime.strptime(date, "%Y-%m-%d")
+        target_date = pytz.timezone("Asia/Tokyo").localize(target_date)
+        
+        # 予約を削除
+        scheduler.remove_scheduled_send(target_date, send_time)
+        
+        if send_time:
+            await interaction.response.send_message(
+                f"予約をキャンセルしました: {target_date.strftime('%Y年%m月%d日')} {send_time.strftime('%H:%M')}",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"予約をキャンセルしました: {target_date.strftime('%Y年%m月%d日')} (全時刻)",
+                ephemeral=True
+            )
+    except Exception as e:
+        print(f"cancel_scheduleコマンドでエラーが発生しました: {e}")
         import traceback
         traceback.print_exc()
         try:
