@@ -641,16 +641,13 @@ async def send_question(interaction: discord.Interaction):
         import traceback
         traceback.print_exc()
         try:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "エラーが発生しました。管理者に連絡してください。",
-                    ephemeral=True
-                )
-        except:
+            # defer()を使用しているため、常にfollowup.send()を使用
             await interaction.followup.send(
                 "エラーが発生しました。管理者に連絡してください。",
                 ephemeral=True
             )
+        except Exception as followup_error:
+            print(f"followup.send()でもエラーが発生しました: {followup_error}")
 
 
 @bot.tree.command(name="show_summary", description="集計結果を表示")
@@ -724,7 +721,25 @@ async def show_summary(interaction: discord.Interaction):
             inline=False
         )
     
-    await interaction.response.send_message(embed=embed)
+    try:
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        print(f"show_summaryコマンドでエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except Exception as followup_error:
+            print(f"エラーメッセージの送信に失敗しました: {followup_error}")
 
 
 def validate_time_format(time_str: str) -> bool:
@@ -803,11 +818,13 @@ async def set_send_time(interaction: discord.Interaction, time: str):
                     "エラーが発生しました。管理者に連絡してください。",
                     ephemeral=True
                 )
-        except:
-            await interaction.followup.send(
-                "エラーが発生しました。管理者に連絡してください。",
-                ephemeral=True
-            )
+            else:
+                await interaction.followup.send(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except Exception as followup_error:
+            print(f"エラーメッセージの送信に失敗しました: {followup_error}")
 
 
 @bot.tree.command(name="set_summary_time", description="show_summaryの自動実行時間を設定")
@@ -847,11 +864,13 @@ async def set_summary_time(interaction: discord.Interaction, time: str):
                     "エラーが発生しました。管理者に連絡してください。",
                     ephemeral=True
                 )
-        except:
-            await interaction.followup.send(
-                "エラーが発生しました。管理者に連絡してください。",
-                ephemeral=True
-            )
+            else:
+                await interaction.followup.send(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except Exception as followup_error:
+            print(f"エラーメッセージの送信に失敗しました: {followup_error}")
 
 
 @bot.tree.command(name="view_auto_times", description="自動実行時間の設定を確認")
@@ -902,11 +921,13 @@ async def view_auto_times(interaction: discord.Interaction):
                     "エラーが発生しました。管理者に連絡してください。",
                     ephemeral=True
                 )
-        except:
-            await interaction.followup.send(
-                "エラーが発生しました。管理者に連絡してください。",
-                ephemeral=True
-            )
+            else:
+                await interaction.followup.send(
+                    "エラーが発生しました。管理者に連絡してください。",
+                    ephemeral=True
+                )
+        except Exception as followup_error:
+            print(f"エラーメッセージの送信に失敗しました: {followup_error}")
 
 
 @bot.tree.command(name="sync_commands", description="コマンドを手動で同期（コマンドが表示されない場合に使用）")
@@ -914,6 +935,12 @@ async def sync_commands_cmd(interaction: discord.Interaction):
     """コマンドを手動で同期"""
     try:
         await interaction.response.defer(ephemeral=True)
+        
+        # 先に進行状況メッセージを送信
+        await interaction.followup.send(
+            "コマンド同期を開始します...",
+            ephemeral=True
+        )
         
         # サーバー限定同期のみを強制的に実行（即座に反映される）
         guild_id = config.get("guild_id")
@@ -957,8 +984,8 @@ async def sync_commands_cmd(interaction: discord.Interaction):
                 "エラーが発生しました。管理者に連絡してください。",
                 ephemeral=True
             )
-        except:
-            pass
+        except Exception as followup_error:
+            print(f"エラーメッセージの送信に失敗しました: {followup_error}")
 
 
 if __name__ == "__main__":
