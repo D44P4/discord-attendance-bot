@@ -90,6 +90,16 @@ async def sync_commands(force_guild_only: bool = False):
         guild_id = config.get("guild_id")
         synced_commands = []
         
+        # コマンドツリーに登録されているコマンドを確認
+        all_commands_before = [cmd.name for cmd in bot.tree.get_commands()]
+        print(f"[コマンド同期] 同期前のコマンド一覧: {all_commands_before}")
+        
+        if not all_commands_before:
+            print(f"[コマンド同期] 警告: コマンドが定義されていません。待機してから再試行します。")
+            await asyncio.sleep(3)
+            all_commands_before = [cmd.name for cmd in bot.tree.get_commands()]
+            print(f"[コマンド同期] 再確認後のコマンド一覧: {all_commands_before}")
+        
         # Discord APIの準備を待つ
         await asyncio.sleep(2)
         
@@ -186,6 +196,19 @@ async def on_ready():
         scheduler_task = create_scheduler_task()
     if not scheduler_task.is_running():
         scheduler_task.start()
+    
+    # コマンドが定義されるまで待つ（ファイル読み込み完了を待つ）
+    await asyncio.sleep(3)
+    
+    # コマンドツリーに登録されているコマンドを確認
+    all_commands = [cmd.name for cmd in bot.tree.get_commands()]
+    print(f"[コマンド確認] 定義されているコマンド: {all_commands}")
+    
+    if not all_commands:
+        print(f"[コマンド確認] 警告: コマンドが定義されていません。もう少し待ってから再試行します。")
+        await asyncio.sleep(5)
+        all_commands = [cmd.name for cmd in bot.tree.get_commands()]
+        print(f"[コマンド確認] 再確認後のコマンド: {all_commands}")
     
     # コマンドを同期（サーバー限定同期を優先）
     guild_id = config.get("guild_id")
