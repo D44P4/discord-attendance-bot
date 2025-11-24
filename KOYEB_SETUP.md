@@ -42,9 +42,9 @@ DiscordボットをKoyebにデプロイする手順です。
 
 | 環境変数名 | 値 | 説明 |
 |----------|-----|------|
-| `GUILD_ID` | `532988276840202250` | サーバー（ギルド）ID |
-| `CHANNEL_ID` | `1434387080578072696` | 手動コマンド用チャンネルID |
-| `AUTO_SEND_CHANNEL_ID` | `1434509700132769792` | 自動送信用チャンネルID |
+| `GUILD_ID` | `YOUR_GUILD_ID` | サーバー（ギルド）ID |
+| `CHANNEL_ID` | `YOUR_CHANNEL_ID` | 手動コマンド用チャンネルID |
+| `AUTO_SEND_CHANNEL_ID` | `YOUR_AUTO_SEND_CHANNEL_ID` | 自動送信用チャンネルID |
 
 #### オプション環境変数（デフォルト値で動作）
 
