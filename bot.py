@@ -7,15 +7,19 @@ import asyncio
 import argparse
 from datetime import datetime, time
 import pytz
+from dotenv import load_dotenv
 from utils.scheduler import Scheduler
 from utils.data_manager import DataManager
 from utils.holidays import HolidayManager
+
+# .envファイルを読み込む（ローカル環境向け）
+load_dotenv()
 
 
 # Botの設定を読み込み
 def load_config():
     """設定ファイルを読み込む（環境変数優先）"""
-    # 環境変数から読み込む（Railway等のクラウド環境向け）
+    # 環境変数から読み込む（.envファイルまたはRailway等のクラウド環境向け）
     discord_token = os.environ.get("DISCORD_TOKEN")
     if discord_token:
         config = {
