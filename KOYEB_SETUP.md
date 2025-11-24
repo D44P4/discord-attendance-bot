@@ -2,6 +2,32 @@
 
 DiscordボットをKoyebにデプロイする手順です。
 
+## 0. ローカル開発環境のセットアップ（オプション）
+
+ローカルで開発・テストする場合は、以下の手順を実行してください。
+
+1. リポジトリをクローン：
+   ```bash
+   git clone https://github.com/D44P4/discord-attendance-bot.git
+   cd discord-attendance-bot
+   ```
+
+2. 依存関係をインストール：
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. `.env`ファイルを作成：
+   - `.env.example`をコピーして`.env`ファイルを作成
+   - `.env`ファイルに実際のDiscord BotトークンやIDを入力
+
+4. ボットを起動：
+   ```bash
+   python bot.py
+   ```
+
+詳細は「環境変数の設定手順 > ローカル開発環境での設定」を参照してください。
+
 ## 1. Koyebアカウントの作成
 
 1. [Koyeb](https://www.koyeb.com/)にアクセス
@@ -51,10 +77,13 @@ DiscordボットをKoyebにデプロイする手順です。
 | 環境変数名 | デフォルト値 | 説明 |
 |----------|------------|------|
 | `SEND_TIME` | `20:00` | メッセージ送信時刻（HH:MM形式） |
+| `SUMMARY_TIME` | `22:00` | 集計結果送信時刻（HH:MM形式） |
 | `WEEKDAYS` | `[4,5]` | 送信する曜日（JSON形式、0=月曜日, 4=金曜日, 5=土曜日） |
 | `SEND_BEFORE_HOLIDAYS` | `true` | 祝前日に送信するかどうか（`true`または`false`） |
 
 ### 環境変数の設定手順
+
+#### Koyebでの設定（本番環境）
 
 1. Koyebダッシュボードでアプリケーションを選択
 2. 「Settings」タブを開く
@@ -63,6 +92,41 @@ DiscordボットをKoyebにデプロイする手順です。
 5. 「Key」に環境変数名、「Value」に値を入力
 6. 「Save」をクリックして保存
 7. すべての環境変数を追加したら、自動的に再デプロイされます
+
+#### ローカル開発環境での設定
+
+ローカル開発環境では、`.env`ファイルを使用して環境変数を管理できます。
+
+1. `.env.example`ファイルをコピーして`.env`ファイルを作成：
+   ```bash
+   copy .env.example .env
+   ```
+   または、エディタで`.env`ファイルを新規作成
+
+2. `.env`ファイルを開いて、実際の値を入力：
+   ```
+   DISCORD_TOKEN=あなたのDiscord Botトークン
+   GUILD_ID=あなたのサーバーID
+   CHANNEL_ID=あなたのチャンネルID
+   AUTO_SEND_CHANNEL_ID=あなたの自動送信チャンネルID
+   SEND_TIME=20:00
+   SUMMARY_TIME=22:00
+   WEEKDAYS=[4,5]
+   SEND_BEFORE_HOLIDAYS=true
+   ```
+
+3. 依存関係をインストール（初回のみ）：
+   ```bash
+   pip install -r requirements.txt
+   ```
+   `python-dotenv`がインストールされ、`.env`ファイルが自動的に読み込まれます
+
+4. ボットを起動：
+   ```bash
+   python bot.py
+   ```
+
+**注意：** `.env`ファイルは`.gitignore`に含まれているため、Gitにpushされません。機密情報を安全に管理できます。
 
 ## 4. デプロイの確認
 
