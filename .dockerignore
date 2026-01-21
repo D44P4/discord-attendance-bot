@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+ENV/
+env/
+.venv
+
+# BigQuery credentials
+*.json
+!package.json
+!config.json.example
+credentials/
+*.key
+
+# Bot configuration (contains sensitive data)
+config.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Results and outputs
+results/
+pics/
+docs/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Documentation (setup guides)
+KOYEB_SETUP.md
+RAILWAY_SETUP.md
+RAILWAY_TROUBLESHOOTING.md
+
+# CI/CD
+.github/
+cloudbuild.yaml

@@ -1,0 +1,56 @@
+steps:
+  # Dockerイメージをビルド
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/discord-bot/discord-attendance-bot:$COMMIT_SHA'
+      - '-t'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/discord-bot/discord-attendance-bot:latest'
+      - '.'
+
+  # DockerイメージをArtifact Registryにプッシュ
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/discord-bot/discord-attendance-bot'
+
+  # Cloud Runにデプロイ
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'discord-attendance-bot'
+      - '--image'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/discord-bot/discord-attendance-bot:$COMMIT_SHA'
+      - '--region'
+      - 'asia-northeast1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--min-instances'
+      - '1'
+      - '--max-instances'
+      - '1'
+      - '--memory'
+      - '512Mi'
+      - '--cpu'
+      - '1'
+      - '--timeout'
+      - '3600'
+      - '--no-cpu-throttling'
+
+# ビルドのタイムアウト設定（60分）
+timeout: '3600s'
+
+# イメージをArtifact Registryに保存
+images:
+  - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/discord-bot/discord-attendance-bot:$COMMIT_SHA'
+  - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/discord-bot/discord-attendance-bot:latest'
+
+# オプション設定
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
