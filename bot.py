@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from utils.scheduler import Scheduler
 from utils.data_manager import DataManager
 from utils.holidays import HolidayManager
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # .envファイルを読み込む（ローカル環境向け）
 load_dotenv()
@@ -1272,7 +1274,32 @@ async def sync_commands_cmd(interaction: discord.Interaction):
             print(f"エラーメッセージの送信に失敗しました: {followup_error}")
 
 
+# Cloud Run用のHTTPサーバー（ヘルスチェック対応）
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b'OK')
+    
+    def log_message(self, format, *args):
+        # ログを抑制（Discordボットのログと混在しないように）
+        pass
+
+def start_health_check_server(port=8080):
+    """Cloud Run用のヘルスチェックサーバーを起動"""
+    server = HTTPServer(('', port), HealthCheckHandler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    print(f"[ヘルスチェック] HTTPサーバーをポート{port}で起動しました")
+
+
 if __name__ == "__main__":
+    # Cloud Run用のHTTPサーバーを起動（環境変数PORTが設定されている場合）
+    port = int(os.environ.get('PORT', 0))
+    if port > 0:
+        start_health_check_server(port)
+    
     # コマンドライン引数の解析
     parser = argparse.ArgumentParser(description="Discordボット")
     parser.add_argument(
