@@ -190,6 +190,62 @@ async def sync_commands(force_guild_only: bool = False):
 async def on_ready():
     """Bot起動時の処理"""
     print(f"{bot.user} がログインしました")
+
+    # Cloud Run Job等向け: 起動後に1回だけ送信して終了（常駐しない）
+    global run_once_flag, holiday_eve_only_flag, run_once_summary_buffer_minutes
+    if run_once_flag:
+        await asyncio.sleep(2)  # Discord APIの準備待ち
+        jst = pytz.timezone("Asia/Tokyo")
+        now = datetime.now(jst)
+
+        if holiday_eve_only_flag:
+            holiday_tomorrow = holiday_manager.get_holiday_before_date(now)
+            should_send = holiday_tomorrow is not None
+            print(f"[run-once] 祝前日判定: {should_send} (tomorrow_holiday={holiday_tomorrow})")
+        else:
+            should_send = scheduler.should_send_today(now)
+            print(f"[run-once] 送信対象判定: {should_send}")
+
+        if should_send:
+            auto_send_channel_id = config.get("auto_send_channel_id") or config.get("channel_id")
+            if not auto_send_channel_id:
+                print("[run-once] エラー: channel_id / auto_send_channel_id が設定されていません")
+            else:
+                try:
+                    channel = await bot.fetch_channel(int(auto_send_channel_id))
+                    await send_question_message(channel, now)
+                    print(f"[run-once] メッセージを送信しました（チャンネルID: {auto_send_channel_id}）")
+
+                    # 集計送信用に送信日を記録
+                    date_str = now.strftime("%Y-%m-%d")
+                    sent_dates.add(date_str)
+
+                    # 集計時刻まで待って集計を送信（同一プロセス内で回答を受け付ける）
+                    summary_time = scheduler.summary_time
+                    summary_dt = jst.localize(datetime.combine(now.date(), summary_time))
+
+                    if now >= summary_dt:
+                        print("[run-once] 既に集計時刻を過ぎているため、集計をすぐ送信します")
+                        await scheduled_summary_callback(now)
+                        if run_once_summary_buffer_minutes > 0:
+                            await asyncio.sleep(run_once_summary_buffer_minutes * 60)
+                    else:
+                        wait_seconds = (summary_dt - now).total_seconds()
+                        print(f"[run-once] 集計送信まで待機します: {int(wait_seconds)}秒")
+                        await asyncio.sleep(wait_seconds)
+                        await scheduled_summary_callback(summary_dt)
+                        if run_once_summary_buffer_minutes > 0:
+                            print(f"[run-once] 追加待機: {run_once_summary_buffer_minutes}分")
+                            await asyncio.sleep(run_once_summary_buffer_minutes * 60)
+                except Exception as e:
+                    print(f"[run-once] エラー: メッセージ送信に失敗しました: {e}")
+                    import traceback
+                    traceback.print_exc()
+        else:
+            print("[run-once] 送信対象外のため終了します")
+
+        await bot.close()
+        return
     
     # 少し待ってからコマンドを同期（Discord APIの準備を待つ）
     await asyncio.sleep(2)
@@ -351,6 +407,9 @@ async def send_question_message(channel: discord.TextChannel, date: datetime = N
 # メッセージ送信日を記録（集計結果送信用）
 sent_dates = set()
 force_send_flag = False  # テスト用: 即座にメッセージを送信するフラグ
+run_once_flag = False  # Cloud Run Job等向け: 起動後に1回だけ判定・送信して終了
+holiday_eve_only_flag = False  # --run-once時に祝前日のみ送信（曜日設定は無視）
+run_once_summary_buffer_minutes = 10  # --run-once時、集計送信後に待機する分数（0でも可）
 
 async def scheduled_send_callback(date: datetime):
     """スケジュール送信コールバック"""
@@ -1312,7 +1371,33 @@ if __name__ == "__main__":
         action="store_true",
         help="即座にメッセージを送信（テスト用）"
     )
+    parser.add_argument(
+        "--run-once",
+        action="store_true",
+        help="起動後に送信対象を判定し、1回だけ送信して終了（Cloud Run Job向け）"
+    )
+    parser.add_argument(
+        "--holiday-eve-only",
+        action="store_true",
+        help="--run-once時に祝前日のみ送信（曜日設定は無視）"
+    )
+    parser.add_argument(
+        "--run-once-summary-buffer-minutes",
+        type=int,
+        default=10,
+        help="--run-once時、集計送信後に待機する分数（デフォルト: 10）"
+    )
     args = parser.parse_args()
+
+    # Cloud Run Job向け: 祝前日以外はDiscordにログインせず即終了（最小コスト）
+    if args.run_once and args.holiday_eve_only:
+        jst = pytz.timezone("Asia/Tokyo")
+        now = datetime.now(jst)
+        hm = HolidayManager()
+        holiday_tomorrow = hm.get_holiday_before_date(now)
+        if holiday_tomorrow is None:
+            print("[run-once] 祝前日ではないため、Discordにログインせず終了します")
+            exit(0)
     
     if not config.get("token"):
         print("エラー: config.jsonにトークンが設定されていません。")
@@ -1334,6 +1419,12 @@ if __name__ == "__main__":
             # グローバルフラグを設定（on_readyでチェック）
             # モジュールレベル変数なので直接参照可能
             globals()['force_send_flag'] = True
+
+        # Cloud Run Job向け（起動後に1回だけ送信して終了）
+        if args.run_once:
+            globals()['run_once_flag'] = True
+            globals()['holiday_eve_only_flag'] = bool(args.holiday_eve_only)
+            globals()['run_once_summary_buffer_minutes'] = int(args.run_once_summary_buffer_minutes)
         
         bot.run(config["token"])
 
